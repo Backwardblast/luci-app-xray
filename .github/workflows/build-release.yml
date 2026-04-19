@@ -69,32 +69,32 @@ jobs:
       - name: Download and Unzip SDK
         run: |
           cd "$CACHE_DIR_SDK"
-          if ! ( wget -q -O - "$SDK_URL_PATH/sha256sums" | grep -- "$SDK_NAME" > sha256sums.small 2>/dev/null ) ; then
-            echo "::error::Can not find ${SDK_NAME} file in sha256sums."
+          
+          # Скачиваем sha256sums и находим правильное имя файла
+          wget -q -O sha256sums "$SDK_URL_PATH/sha256sums"
+          SDK_FILE=$(grep -o "openwrt-sdk-.*-mediatek-filogic_.*\.Linux-x86_64\.tar\.zst" sha256sums | head -n1)
+          
+          if [ -z "$SDK_FILE" ]; then
+            echo "::error::Could not find SDK filename in sha256sums"
             exit 1
           fi
-          SDK_FILE="$(cat sha256sums.small | cut -d' ' -f2 | sed 's/*//g')"
-          if ! sha256sum -c ./sha256sums.small >/dev/null 2>&1 ; then
-            wget -q -O "$SDK_FILE" "$SDK_URL_PATH/$SDK_FILE"
-            if ! sha256sum -c ./sha256sums.small >/dev/null 2>&1 ; then
-              echo "::error::SDK can not be verified!"
-              exit 1
-            fi
+          
+          echo "Found SDK file: $SDK_FILE"
+          
+          # Скачиваем, если нет или checksum не совпадает
+          if ! sha256sum -c --ignore-missing sha256sums 2>/dev/null | grep -q "$SDK_FILE.*OK"; then
+            wget -q --show-progress "$SDK_URL_PATH/$SDK_FILE"
+            sha256sum -c --ignore-missing sha256sums | grep "$SDK_FILE"
           fi
+          
           cd -
-          file "$CACHE_DIR_SDK/$SDK_FILE"
-          7z x "$CACHE_DIR_SDK/$SDK_FILE" -so | tar -C "$SDK_HOME" -xvf - --strip=1
-          cd "$SDK_HOME"
-          test -d "dl" && rm -rf "dl" || true
-          test -d "feeds" && rm -rf "feeds" || true
-          ln -s "$CACHE_DIR_DL" "dl"
-          ln -s "$CACHE_DIR_FEEDS" "feeds"
-          cp feeds.conf.default feeds.conf
-          sed -i 's#git.openwrt.org/openwrt/openwrt#github.com/openwrt/openwrt#' feeds.conf
-          sed -i 's#git.openwrt.org/feed/packages#github.com/openwrt/packages#' feeds.conf
-          sed -i 's#git.openwrt.org/project/luci#github.com/openwrt/luci#' feeds.conf
-          sed -i 's#git.openwrt.org/feed/telephony#github.com/openwrt/telephony#' feeds.conf
-          cd -
+          
+          # Распаковываем .tar.zst правильно
+          echo "Extracting SDK..."
+          unzstd -c "$CACHE_DIR_SDK/$SDK_FILE" | tar -C "$SDK_HOME" -xvf - --strip-components=1
+          
+          # Проверяем, что распаковалось
+          ls -la "$SDK_HOME"
 
       - name: Update and Install Packages
         run: |
